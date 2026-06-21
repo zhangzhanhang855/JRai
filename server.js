@@ -25,7 +25,7 @@ app.post('/api/chat', async (req, res) => {
         const { message, history } = req.body;
 
         // 回退到当前 API 实际支持的最强旗舰模型
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro-latest' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
         const chat = model.startChat({
             history: history || [],

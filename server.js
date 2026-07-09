@@ -1,48 +1,40 @@
-import express from 'express';
-import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { GoogleGenerativeAI } from '@google/generative-ai';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
+// 允许跨域请求（方便你的前端进行测试）
 app.use(cors());
+// 解析 JSON 请求体
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
-if (!process.env.GEMINI_API_KEY) {
-    console.error("警告: 未找到 GEMINI_API_KEY 环境变量！");
-}
+// 代理接口
+app.post('/api/proxy', async (req, res) => {
+    const { url } = req.body;
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    if (!url) {
+        return res.status(400).json({ error: 'URL is required' });
+    }
 
-app.post('/api/chat', async (req, res) => {
     try {
-        const { message, history } = req.body;
-
-        // 回退到当前 API 实际支持的最强旗舰模型
-        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
-
-        const chat = model.startChat({
-            history: history || [],
+        // 使用 Axios 访问目标网站，并设置常见的 User-Agent 伪装成浏览器
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            timeout: 10000 // 10秒超时
         });
 
-        const result = await chat.sendMessage(message);
-        const response = await result.response;
-        const text = response.text();
-
-        res.json({ text: text });
+        // 将获取到的网页 HTML 传回前端
+        res.send(response.data);
     } catch (error) {
-        console.error('调用 Gemini API 失败:', error);
-        res.status(500).json({ error: error.message || 'AI 服务暂时不可用。' });
+        console.error('Error fetching the URL:', error.message);
+        res.status(500).json({ error: 'Failed to fetch the website', details: error.message });
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-    console.log(`当前使用的模型为: gemini-1.5-pro-latest`);
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });

@@ -10,20 +10,21 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
-    res.json({ status: "healthy", message: "JR Locked-Sandbox Proxy Server is running!" });
+    res.json({ status: "healthy", message: "JR Ghost-Protocol Server Operational!" });
 });
 
-// 1. 核心网页 HTML 加载与强力控制注入
+// 1. 网页 HTML 代理接口
 app.post('/api/proxy', async (req, res) => {
     let { url } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
 
     try {
-        console.log(`[HTML Proxy] Fetching & Locking: ${url}`);
+        console.log(`[Ghost Mode Proxy] Fetching and Decrypting Headers: ${url}`);
         const response = await axios.get(url, {
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
             },
             timeout: 15000
         });
@@ -32,72 +33,47 @@ app.post('/api/proxy', async (req, res) => {
         const urlObj = new URL(url);
         const targetOrigin = urlObj.origin; 
 
-        // 👉 终极黑科技：注入防逃逸、防弹窗、全流程锁定的代理脚本
+        // 👉 极致注入：强制打破 window.top 与防内嵌拦截
         const injectionScript = `
         <head>
             <script>
                 (function() {
                     window._targetOrigin = "${targetOrigin}";
                     
-                    // 【锁定一】：拦截所有新窗口弹窗 (window.open)，让它向外层的父浏览器发送“新建标签页”的电波
+                    // 拦截新窗口
                     window.open = function(url) {
                         if (url) {
                             let absoluteUrl = url.startsWith('http') ? url : new URL(url, window._targetOrigin).href;
-                            // 向外层套壳发送跨域消息
                             window.parent.postMessage({ type: 'OPEN_NEW_TAB', url: absoluteUrl }, '*');
                         }
                         return null; 
                     };
 
-                    // 【锁定二】：拦截页面上所有的 <a> 标签点击
+                    // 拦截链接
                     document.addEventListener('click', function(e) {
                         const target = e.target.closest('a');
                         if (target && target.href) {
-                            // 如果 target 是 _blank（试图跳出新窗口）
-                            if (target.target === '_blank') {
-                                e.preventDefault(); // 极其重要：拦截原生跳转
-                                let absoluteUrl = target.href.startsWith('http') ? target.href : new URL(target.getAttribute('href'), window._targetOrigin).href;
-                                window.parent.postMessage({ type: 'OPEN_NEW_TAB', url: absoluteUrl }, '*');
+                            e.preventDefault();
+                            let absoluteUrl = target.href.startsWith('http') ? target.href : new URL(target.getAttribute('href'), window._targetOrigin).href;
+                            window.parent.postMessage({ type: 'OPEN_NEW_TAB', url: absoluteUrl }, '*');
+                        }
+                    }, true);
+
+                    // 拦截并改写所有表单的 submit 行为，防止登录点击时脱离代理
+                    document.addEventListener('submit', function(e) {
+                        const form = e.target;
+                        if (form) {
+                            const action = form.getAttribute('action');
+                            if (action && !action.startsWith('http')) {
+                                form.setAttribute('action', new URL(action, window._targetOrigin).href);
                             }
                         }
                     }, true);
 
-                    // 【锁定三】：粉碎反内嵌劫持 (阻止 window.top 逃逸)
-                    // 让顶级对象变成只读，原网页的 JS 试图重写顶级定位时会直接静默失败
-                    const preventEscape = {
-                        get: function() { return window; },
-                        set: function() { return true; }
-                    };
+                    // 彻底伪造并欺骗 window.top 检查
+                    const preventEscape = { get: function() { return window; }, set: function() { return true; } };
                     Object.defineProperty(window, 'top', preventEscape);
                     Object.defineProperty(window, 'parent', preventEscape);
-
-                    // 【锁定四】：传统的 Audio 与 Fetch 劫持中转
-                    const OriginalAudio = window.Audio;
-                    window.Audio = function(src) {
-                        const audio = new OriginalAudio();
-                        if (src) { audio.src = src; }
-                        Object.defineProperty(audio, 'src', {
-                            set: function(val) {
-                                if (val && !val.startsWith('data:') && !val.includes('api/media-stream')) {
-                                    let absoluteUrl = val.startsWith('http') ? val : new URL(val, window._targetOrigin).href;
-                                    val = "https://jrai-v64g.onrender.com/api/media-stream?url=" + encodeURIComponent(absoluteUrl);
-                                }
-                                this.setAttribute('src', val);
-                            },
-                            get: function() { return this.getAttribute('src'); }
-                        });
-                        return audio;
-                    };
-
-                    const originalFetch = window.fetch;
-                    window.fetch = async function(...args) {
-                        let resource = args[0];
-                        if (typeof resource === 'string' && (resource.includes('.mp3') || resource.includes('.m4a') || resource.includes('.ogg') || resource.includes('stream') || resource.includes('audio'))) {
-                            let absoluteUrl = resource.startsWith('http') ? resource : new URL(resource, window._targetOrigin).href;
-                            args[0] = "https://jrai-v64g.onrender.com/api/media-stream?url=" + encodeURIComponent(absoluteUrl);
-                        }
-                        return originalFetch.apply(this, args);
-                    };
                 })();
             </script>
             <base href="${targetOrigin}/">
@@ -116,13 +92,15 @@ app.post('/api/proxy', async (req, res) => {
     }
 });
 
-// 2. 媒体流中转接口保持不变
-app.get('/api/media-stream', (req, res, next) => {
+// 2. 核心媒体流与安全响应头粉碎转发中心
+app.use('/api/media-stream', (req, res, next) => {
     const { url } = req.query;
     if (!url) return res.status(400).send('URL is required');
+
     try {
         const decodedUrl = decodeURIComponent(url);
         const urlObj = new URL(decodedUrl);
+
         const mediaProxy = createProxyMiddleware({
             target: urlObj.origin,
             changeOrigin: true,
@@ -133,11 +111,20 @@ app.get('/api/media-stream', (req, res, next) => {
                     proxyReq.setHeader('Referer', urlObj.origin);
                 },
                 proxyRes: (proxyRes) => {
+                    // 💡 【大招来了】：在 Render 收到来自 Google 等站点的安全响应后，
+                    // 强行把所有用于封锁 iframe、禁止跨域、防止内嵌的安全头全部在内存中拔除！
+                    delete proxyRes.headers['x-frame-options'];
+                    delete proxyRes.headers['content-security-policy'];
+                    delete proxyRes.headers['cross-origin-opener-policy'];
+                    delete proxyRes.headers['cross-origin-resource-policy'];
+
+                    // 重新对国内浏览器下发全绿通行证
                     proxyRes.headers['Access-Control-Allow-Origin'] = '*';
                     proxyRes.headers['Access-Control-Allow-Headers'] = '*';
                 }
             }
         });
+
         mediaProxy(req, res, next);
     } catch (e) {
         res.status(500).send(e.message);
@@ -145,5 +132,5 @@ app.get('/api/media-stream', (req, res, next) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running securely on port ${PORT}`);
+    console.log(`JR Locked-Protocol Server running on port ${PORT}`);
 });

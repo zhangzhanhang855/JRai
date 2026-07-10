@@ -6,27 +6,21 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 开启跨域
 app.use(cors());
-// 仅对非流式传输的常规路由解析 JSON
 app.use(express.json());
 
-// 健康检查
 app.get('/', (req, res) => {
-    res.json({ 
-        status: "healthy", 
-        message: "JR Ultimate Audio Proxy Server is fully operational!" 
-    });
+    res.json({ status: "healthy", message: "JR Locked-Sandbox Proxy Server is running!" });
 });
 
-// 1. 网页 HTML 加载与脚本注入接口
+// 1. 核心网页 HTML 加载与强力控制注入
 app.post('/api/proxy', async (req, res) => {
     let { url } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
 
     try {
-        console.log(`[HTML Proxy] Launching overseas fetch for: ${url}`);
+        console.log(`[HTML Proxy] Fetching & Locking: ${url}`);
         const response = await axios.get(url, {
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' 
@@ -38,20 +32,50 @@ app.post('/api/proxy', async (req, res) => {
         const urlObj = new URL(url);
         const targetOrigin = urlObj.origin; 
 
-        // 👉 核心黑科技：向返回的 HTML 头部强行挂载底层全自动拦截网
-        // 哪怕音乐播放器是用极其复杂的原生混淆 JS 加载的，它创建 Audio 和 Fetch 的动作也会被我们瞬间拦截，强制转换为走 Render 海外中转
+        // 👉 终极黑科技：注入防逃逸、防弹窗、全流程锁定的代理脚本
         const injectionScript = `
         <head>
             <script>
                 (function() {
                     window._targetOrigin = "${targetOrigin}";
                     
-                    // 1. 劫持原生 Audio 构造函数 (修复传统的 <audio> 标签与 new Audio 播放)
+                    // 【锁定一】：拦截所有新窗口弹窗 (window.open)，让它向外层的父浏览器发送“新建标签页”的电波
+                    window.open = function(url) {
+                        if (url) {
+                            let absoluteUrl = url.startsWith('http') ? url : new URL(url, window._targetOrigin).href;
+                            // 向外层套壳发送跨域消息
+                            window.parent.postMessage({ type: 'OPEN_NEW_TAB', url: absoluteUrl }, '*');
+                        }
+                        return null; 
+                    };
+
+                    // 【锁定二】：拦截页面上所有的 <a> 标签点击
+                    document.addEventListener('click', function(e) {
+                        const target = e.target.closest('a');
+                        if (target && target.href) {
+                            // 如果 target 是 _blank（试图跳出新窗口）
+                            if (target.target === '_blank') {
+                                e.preventDefault(); // 极其重要：拦截原生跳转
+                                let absoluteUrl = target.href.startsWith('http') ? target.href : new URL(target.getAttribute('href'), window._targetOrigin).href;
+                                window.parent.postMessage({ type: 'OPEN_NEW_TAB', url: absoluteUrl }, '*');
+                            }
+                        }
+                    }, true);
+
+                    // 【锁定三】：粉碎反内嵌劫持 (阻止 window.top 逃逸)
+                    // 让顶级对象变成只读，原网页的 JS 试图重写顶级定位时会直接静默失败
+                    const preventEscape = {
+                        get: function() { return window; },
+                        set: function() { return true; }
+                    };
+                    Object.defineProperty(window, 'top', preventEscape);
+                    Object.defineProperty(window, 'parent', preventEscape);
+
+                    // 【锁定四】：传统的 Audio 与 Fetch 劫持中转
                     const OriginalAudio = window.Audio;
                     window.Audio = function(src) {
                         const audio = new OriginalAudio();
                         if (src) { audio.src = src; }
-                        
                         Object.defineProperty(audio, 'src', {
                             set: function(val) {
                                 if (val && !val.startsWith('data:') && !val.includes('api/media-stream')) {
@@ -65,7 +89,6 @@ app.post('/api/proxy', async (req, res) => {
                         return audio;
                     };
 
-                    // 2. 劫持现代浏览器原生的 fetch 网络请求 (修复高级播放器异步拉取二进制流)
                     const originalFetch = window.fetch;
                     window.fetch = async function(...args) {
                         let resource = args[0];
@@ -80,7 +103,6 @@ app.post('/api/proxy', async (req, res) => {
             <base href="${targetOrigin}/">
         `;
 
-        // 织入拦截网
         if (html.includes('<head>')) {
             html = html.replace('<head>', injectionScript);
         } else {
@@ -90,52 +112,38 @@ app.post('/api/proxy', async (req, res) => {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(html);
     } catch (error) {
-        console.error('[HTML Proxy Error]:', error.message);
-        res.status(500).send(`<div style="padding:40px;color:red;text-align:center;font-family:sans-serif;">Render Proxy Error: ${error.message}</div>`);
+        res.status(500).send(`<div style="padding:40px;color:red;text-align:center;">Proxy Error: ${error.message}</div>`);
     }
 });
 
-// 2. 终极海外音频二进制流全自动代理转发中心
+// 2. 媒体流中转接口保持不变
 app.get('/api/media-stream', (req, res, next) => {
     const { url } = req.query;
     if (!url) return res.status(400).send('URL is required');
-
     try {
         const decodedUrl = decodeURIComponent(url);
         const urlObj = new URL(decodedUrl);
-
-        console.log(`[Render Audio Cloud Parser] Extracting stream from: ${urlObj.host}`);
-
-        // 使用高级反向代理，无缝打通跨国音频传输通道，突破国内机房对海外 IP 的反爬隔离
         const mediaProxy = createProxyMiddleware({
             target: urlObj.origin,
             changeOrigin: true,
             pathRewrite: () => urlObj.pathname + urlObj.search,
             on: {
                 proxyReq: (proxyReq) => {
-                    // 伪装头部，欺骗大厂音乐服务器的防盗链监测
                     proxyReq.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
                     proxyReq.setHeader('Referer', urlObj.origin);
                 },
                 proxyRes: (proxyRes) => {
-                    // 动态注入跨域白名单，赋予国内浏览器强行解码海外流的权限
                     proxyRes.headers['Access-Control-Allow-Origin'] = '*';
                     proxyRes.headers['Access-Control-Allow-Headers'] = '*';
-                    proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS';
                 }
-            },
-            logger: console
+            }
         });
-
         mediaProxy(req, res, next);
     } catch (e) {
-        console.error('[Audio Parser Error]:', e.message);
-        res.status(500).send(`Audio Parser Crash: ${e.message}`);
+        res.status(500).send(e.message);
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`====================================================`);
-    console.log(`  Render Audio Cloud Server is operational on ${PORT}`);
-    console.log(`====================================================`);
+    console.log(`Server running securely on port ${PORT}`);
 });

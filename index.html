@@ -1,106 +1,354 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JR Web Proxy Client</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        input[type="text"] {
-            width: 70%;
-            padding: 10px;
-            font-size: 16px;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        #result-container {
-            margin-top: 20px;
-            border: 1px solid #ccc;
-            min-height: 500px;
-            padding: 10px;
-            background: #f9f9f9;
-        }
-        iframe {
-            width: 100%;
-            height: 600px;
-            border: none;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JR AI - Universal API Chat</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    body {
+      display: flex;
+      height: 100vh;
+      background-color: #0f172a;
+      color: #e2e8f0;
+    }
+    /* Sidebar Settings */
+    .sidebar {
+      width: 320px;
+      background-color: #1e293b;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      border-right: 1px solid #334155;
+    }
+    .sidebar h2 {
+      font-size: 1.2rem;
+      color: #38bdf8;
+      margin-bottom: 8px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    label {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    input, select {
+      background-color: #0f172a;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: #38bdf8;
+    }
+    .hint {
+      font-size: 0.75rem;
+      color: #64748b;
+      line-height: 1.3;
+    }
+
+    /* Chat Area */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    .chat-history {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .message {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 8px;
+      line-height: 1.5;
+      font-size: 0.95rem;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
+    .message.user {
+      align-self: flex-end;
+      background-color: #0284c7;
+      color: #ffffff;
+    }
+    .message.assistant {
+      align-self: flex-start;
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      color: #e2e8f0;
+    }
+    .message.error {
+      align-self: flex-start;
+      background-color: #450a0a;
+      border: 1px solid #dc2626;
+      color: #fca5a5;
+      font-family: monospace;
+      font-size: 0.85rem;
+    }
+
+    /* Input area */
+    .input-bar {
+      padding: 16px 24px;
+      background-color: #1e293b;
+      border-top: 1px solid #334155;
+      display: flex;
+      gap: 12px;
+    }
+    textarea {
+      flex: 1;
+      background-color: #0f172a;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      padding: 10px;
+      border-radius: 6px;
+      resize: none;
+      height: 48px;
+      font-size: 0.95rem;
+      outline: none;
+    }
+    textarea:focus {
+      border-color: #38bdf8;
+    }
+    button {
+      background-color: #38bdf8;
+      color: #0f172a;
+      font-weight: 600;
+      border: none;
+      padding: 0 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #0ea5e9;
+    }
+    button:disabled {
+      background-color: #475569;
+      cursor: not-allowed;
+    }
+  </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>JR Web Proxy Access</h2>
-    <p>Enter a URL and let Render server fetch it for you:</p>
-    
-    <div>
-        <input type="text" id="targetUrl" placeholder="https://example.com" value="https://example.com">
-        <button onclick="fetchPage()">Fetch Page</button>
+  <!-- Settings Panel -->
+  <aside class="sidebar">
+    <h2>JR AI — Config</h2>
+
+    <div class="form-group">
+      <label for="provider">Provider API Type</label>
+      <select id="provider" onchange="switchProviderPreset()">
+        <option value="gemini">Google Gemini</option>
+        <option value="claude">Anthropic Claude</option>
+      </select>
     </div>
 
-    <div id="result-container">
-        <p style="color: #666;">Fetched page will appear below...</p>
+    <div class="form-group">
+      <label for="endpoint">Custom Endpoint</label>
+      <input type="text" id="endpoint" placeholder="Enter endpoint URL">
+      <span class="hint" id="endpointHint">Default endpoint</span>
     </div>
-</div>
 
-<script>
-    // 替换成你在 Render 部署成功后的实际后端 URL
-    const BACKEND_URL = 'https://jrai-v64g.onrender.com/api/proxy'; 
+    <div class="form-group">
+      <label for="apiKey">API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-...">
+    </div>
 
-    async function fetchPage() {
-        const urlInput = document.getElementById('targetUrl').value.trim();
-        const container = document.getElementById('result-container');
-        
-        if (!urlInput) {
-            alert('Please enter a valid URL');
-            return;
-        }
+    <div class="form-group">
+      <label for="model">Model Name</label>
+      <input type="text" id="model">
+    </div>
 
-        container.innerHTML = '<p>Loading from server...</p>';
+    <div class="hint">
+      * Direct requests from a browser to Anthropic or Google might require an authorized CORS reverse proxy if headers are blocked by browser CORS policy.
+    </div>
+  </aside>
 
-        try {
-            const response = await fetch(BACKEND_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ url: urlInput })
-            });
+  <!-- Chat Panel -->
+  <main class="chat-container">
+    <div class="chat-history" id="chatHistory">
+      <div class="message assistant">Hello! I am JR AI. Please configure your API settings on the left and enter your message below. If an API request fails, the exact raw error response will be shown here.</div>
+    </div>
 
-            if (!response.ok) {
-                throw new Error(`Server returned status: ${response.status}`);
-            }
+    <div class="input-bar">
+      <textarea id="userInput" placeholder="Type your message... (Shift + Enter for newline)"></textarea>
+      <button id="sendBtn" onclick="sendMessage()">Send</button>
+    </div>
+  </main>
 
-            // 拿到后端传回的网页 HTML 文本
-            const htmlContent = await response.text();
+  <script>
+    // Presets for quick switching
+    const PRESETS = {
+      gemini: {
+        endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
+        model: "gemini-1.5-flash",
+        hint: "Format: {endpoint}/{model}:generateContent?key={key}"
+      },
+      claude: {
+        endpoint: "https://api.anthropic.com/v1/messages",
+        model: "claude-3-5-sonnet-20241022",
+        hint: "Format: POST {endpoint}"
+      }
+    };
 
-            // 使用 iframe 来安全、隔离地渲染返回的 HTML 页面
-            const iframe = document.createElement('iframe');
-            container.innerHTML = ''; // 清空提示
-            container.appendChild(iframe);
-            
-            // 将 HTML 写入 iframe
-            const doc = iframe.contentDocument || iframe.contentWindow.document;
-            doc.open();
-            doc.write(htmlContent);
-            doc.close();
-
-        } catch (error) {
-            console.error('Fetch error:', error);
-            container.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
-        }
+    function switchProviderPreset() {
+      const provider = document.getElementById("provider").value;
+      document.getElementById("endpoint").value = PRESETS[provider].endpoint;
+      document.getElementById("model").value = PRESETS[provider].model;
+      document.getElementById("endpointHint").innerText = PRESETS[provider].hint;
     }
-</script>
 
+    // Initialize with Gemini defaults
+    switchProviderPreset();
+
+    // Store dialogue context
+    const messagesHistory = [];
+
+    function appendMessage(role, content, isError = false) {
+      const historyEl = document.getElementById("chatHistory");
+      const msgDiv = document.createElement("div");
+      msgDiv.className = `message ${isError ? "error" : role}`;
+      msgDiv.innerText = content;
+      historyEl.appendChild(msgDiv);
+      historyEl.scrollTop = historyEl.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const inputEl = document.getElementById("userInput");
+      const userText = inputEl.value.trim();
+      if (!userText) return;
+
+      const provider = document.getElementById("provider").value;
+      const endpoint = document.getElementById("endpoint").value.trim();
+      const apiKey = document.getElementById("apiKey").value.trim();
+      const model = document.getElementById("model").value.trim();
+
+      if (!apiKey) {
+        appendMessage("assistant", "[Error] API Key cannot be empty.", true);
+        return;
+      }
+
+      appendMessage("user", userText);
+      inputEl.value = "";
+
+      const sendBtn = document.getElementById("sendBtn");
+      sendBtn.disabled = true;
+
+      try {
+        if (provider === "claude") {
+          await callClaude(endpoint, apiKey, model, userText);
+        } else {
+          await callGemini(endpoint, apiKey, model, userText);
+        }
+      } catch (err) {
+        // Output connection/network/CORS level errors
+        appendMessage("assistant", `[Network/Client Error]: ${err.message}`, true);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    // Call Anthropic Claude API
+    async function callClaude(endpoint, apiKey, model, text) {
+      messagesHistory.push({ role: "user", content: text });
+
+      const payload = {
+        model: model,
+        max_tokens: 1024,
+        messages: messagesHistory
+      };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          // Anthropic requires this header when called directly from a browser:
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const rawText = await response.text();
+
+      if (!response.ok) {
+        // Output exact HTTP status code and response body
+        appendMessage("assistant", `[Claude API Error ${response.status}]:\n${rawText}`, true);
+        return;
+      }
+
+      try {
+        const data = JSON.parse(rawText);
+        const reply = data.content?.[0]?.text || "[Empty Response]";
+        appendMessage("assistant", reply);
+        messagesHistory.push({ role: "assistant", content: reply });
+      } catch (e) {
+        appendMessage("assistant", `[JSON Parse Error]:\n${rawText}`, true);
+      }
+    }
+
+    // Call Google Gemini API
+    async function callGemini(endpoint, apiKey, model, text) {
+      messagesHistory.push({ role: "user", parts: [{ text }] });
+
+      // Clean trailing slashes
+      const base = endpoint.replace(/\/+$/, "");
+      const requestUrl = `${base}/${model}:generateContent?key=${apiKey}`;
+
+      const payload = {
+        contents: messagesHistory
+      };
+
+      const response = await fetch(requestUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const rawText = await response.text();
+
+      if (!response.ok) {
+        // Output exact HTTP status code and response body
+        appendMessage("assistant", `[Gemini API Error ${response.status}]:\n${rawText}`, true);
+        return;
+      }
+
+      try {
+        const data = JSON.parse(rawText);
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "[Empty Response]";
+        appendMessage("assistant", reply);
+        messagesHistory.push({ role: "model", parts: [{ text: reply }] });
+      } catch (e) {
+        appendMessage("assistant", `[JSON Parse Error]:\n${rawText}`, true);
+      }
+    }
+
+    // Allow Enter key to submit (Shift+Enter for newline)
+    document.getElementById("userInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  </script>
 </body>
 </html>

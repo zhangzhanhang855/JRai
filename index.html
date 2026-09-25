@@ -191,164 +191,165 @@
       <button id="sendBtn" onclick="sendMessage()">Send</button>
     </div>
   </main>
-
   <script>
-    // Presets for quick switching
-    const PRESETS = {
-      gemini: {
-        endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
-        model: "gemini-1.5-flash",
-        hint: "Format: {endpoint}/{model}:generateContent?key={key}"
-      },
-      claude: {
-        endpoint: "https://api.anthropic.com/v1/messages",
-        model: "claude-3-5-sonnet-20241022",
-        hint: "Format: POST {endpoint}"
-      }
-    };
+// Provider presets
+const PRESETS = {
+  gemini: {
+    endpoint: "https://generativelanguage.googleapis.com/v1beta/models",
+    model: "gemini-1.5-flash",
+    hint: "Format: {endpoint}/{model}:generateContent?key={key}"
+  },
+  claude: {
+    endpoint: "https://api.anthropic.com/v1/messages",
+    model: "claude-3-5-sonnet-20241022",
+    hint: "Format: POST {endpoint}"
+  }
+};
 
-    function switchProviderPreset() {
-      const provider = document.getElementById("provider").value;
-      document.getElementById("endpoint").value = PRESETS[provider].endpoint;
-      document.getElementById("model").value = PRESETS[provider].model;
-      document.getElementById("endpointHint").innerText = PRESETS[provider].hint;
+// Independent history states to prevent schema collision
+const histories = {
+  gemini: [],
+  claude: []
+};
+
+function switchProviderPreset() {
+  const provider = document.getElementById("provider").value;
+  document.getElementById("endpoint").value = PRESETS[provider].endpoint;
+  document.getElementById("model").value = PRESETS[provider].model;
+  document.getElementById("endpointHint").innerText = PRESETS[provider].hint;
+}
+
+switchProviderPreset();
+
+function appendMessage(role, content, isError = false) {
+  const historyEl = document.getElementById("chatHistory");
+  const msgDiv = document.createElement("div");
+  msgDiv.className = `message ${isError ? "error" : role}`;
+  msgDiv.innerText = content;
+  historyEl.appendChild(msgDiv);
+  historyEl.scrollTop = historyEl.scrollHeight;
+}
+
+async function sendMessage() {
+  const inputEl = document.getElementById("userInput");
+  const userText = inputEl.value.trim();
+  if (!userText) return;
+
+  const provider = document.getElementById("provider").value;
+  const endpoint = document.getElementById("endpoint").value.trim();
+  const apiKey = document.getElementById("apiKey").value.trim();
+  const model = document.getElementById("model").value.trim();
+
+  if (!apiKey) {
+    appendMessage("assistant", "[Error] API Key cannot be empty.", true);
+    return;
+  }
+
+  appendMessage("user", userText);
+  inputEl.value = "";
+
+  const sendBtn = document.getElementById("sendBtn");
+  sendBtn.disabled = true;
+
+  try {
+    if (provider === "claude") {
+      await callClaude(endpoint, apiKey, model, userText);
+    } else {
+      await callGemini(endpoint, apiKey, model, userText);
     }
+  } catch (err) {
+    appendMessage("assistant", `[Network/Client Error]: ${err.message}`, true);
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
 
-    // Initialize with Gemini defaults
-    switchProviderPreset();
+// Claude Handler
+async function callClaude(endpoint, apiKey, model, text) {
+  const userTurn = { role: "user", content: text };
+  histories.claude.push(userTurn);
 
-    // Store dialogue context
-    const messagesHistory = [];
+  const payload = {
+    model: model,
+    max_tokens: 1024,
+    messages: histories.claude
+  };
 
-    function appendMessage(role, content, isError = false) {
-      const historyEl = document.getElementById("chatHistory");
-      const msgDiv = document.createElement("div");
-      msgDiv.className = `message ${isError ? "error" : role}`;
-      msgDiv.innerText = content;
-      historyEl.appendChild(msgDiv);
-      historyEl.scrollTop = historyEl.scrollHeight;
-    }
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify(payload)
+  });
 
-    async function sendMessage() {
-      const inputEl = document.getElementById("userInput");
-      const userText = inputEl.value.trim();
-      if (!userText) return;
+  const rawText = await response.text();
 
-      const provider = document.getElementById("provider").value;
-      const endpoint = document.getElementById("endpoint").value.trim();
-      const apiKey = document.getElementById("apiKey").value.trim();
-      const model = document.getElementById("model").value.trim();
+  if (!response.ok) {
+    histories.claude.pop(); // Remove uncommitted user turn on failure
+    appendMessage("assistant", `[Claude API Error ${response.status}]:\n${rawText}`, true);
+    return;
+  }
 
-      if (!apiKey) {
-        appendMessage("assistant", "[Error] API Key cannot be empty.", true);
-        return;
-      }
+  try {
+    const data = JSON.parse(rawText);
+    const reply = data.content?.[0]?.text || "[Empty Response]";
+    appendMessage("assistant", reply);
+    histories.claude.push({ role: "assistant", content: reply });
+  } catch (e) {
+    histories.claude.pop();
+    appendMessage("assistant", `[JSON Parse Error]:\n${rawText}`, true);
+  }
+}
 
-      appendMessage("user", userText);
-      inputEl.value = "";
+// Gemini Handler
+async function callGemini(endpoint, apiKey, model, text) {
+  const userTurn = { role: "user", parts: [{ text }] };
+  histories.gemini.push(userTurn);
 
-      const sendBtn = document.getElementById("sendBtn");
-      sendBtn.disabled = true;
+  const base = endpoint.replace(/\/+$/, "");
+  const requestUrl = `${base}/${model}:generateContent?key=${apiKey}`;
 
-      try {
-        if (provider === "claude") {
-          await callClaude(endpoint, apiKey, model, userText);
-        } else {
-          await callGemini(endpoint, apiKey, model, userText);
-        }
-      } catch (err) {
-        // Output connection/network/CORS level errors
-        appendMessage("assistant", `[Network/Client Error]: ${err.message}`, true);
-      } finally {
-        sendBtn.disabled = false;
-      }
-    }
+  const payload = {
+    contents: histories.gemini
+  };
 
-    // Call Anthropic Claude API
-    async function callClaude(endpoint, apiKey, model, text) {
-      messagesHistory.push({ role: "user", content: text });
+  const response = await fetch(requestUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
 
-      const payload = {
-        model: model,
-        max_tokens: 1024,
-        messages: messagesHistory
-      };
+  const rawText = await response.text();
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          // Anthropic requires this header when called directly from a browser:
-          "anthropic-dangerous-direct-browser-access": "true"
-        },
-        body: JSON.stringify(payload)
-      });
+  if (!response.ok) {
+    histories.gemini.pop(); // Remove uncommitted user turn on failure
+    appendMessage("assistant", `[Gemini API Error ${response.status}]:\n${rawText}`, true);
+    return;
+  }
 
-      const rawText = await response.text();
+  try {
+    const data = JSON.parse(rawText);
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "[Empty Response]";
+    appendMessage("assistant", reply);
+    histories.gemini.push({ role: "model", parts: [{ text: reply }] });
+  } catch (e) {
+    histories.gemini.pop();
+    appendMessage("assistant", `[JSON Parse Error]:\n${rawText}`, true);
+  }
+}
 
-      if (!response.ok) {
-        // Output exact HTTP status code and response body
-        appendMessage("assistant", `[Claude API Error ${response.status}]:\n${rawText}`, true);
-        return;
-      }
-
-      try {
-        const data = JSON.parse(rawText);
-        const reply = data.content?.[0]?.text || "[Empty Response]";
-        appendMessage("assistant", reply);
-        messagesHistory.push({ role: "assistant", content: reply });
-      } catch (e) {
-        appendMessage("assistant", `[JSON Parse Error]:\n${rawText}`, true);
-      }
-    }
-
-    // Call Google Gemini API
-    async function callGemini(endpoint, apiKey, model, text) {
-      messagesHistory.push({ role: "user", parts: [{ text }] });
-
-      // Clean trailing slashes
-      const base = endpoint.replace(/\/+$/, "");
-      const requestUrl = `${base}/${model}:generateContent?key=${apiKey}`;
-
-      const payload = {
-        contents: messagesHistory
-      };
-
-      const response = await fetch(requestUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const rawText = await response.text();
-
-      if (!response.ok) {
-        // Output exact HTTP status code and response body
-        appendMessage("assistant", `[Gemini API Error ${response.status}]:\n${rawText}`, true);
-        return;
-      }
-
-      try {
-        const data = JSON.parse(rawText);
-        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "[Empty Response]";
-        appendMessage("assistant", reply);
-        messagesHistory.push({ role: "model", parts: [{ text: reply }] });
-      } catch (e) {
-        appendMessage("assistant", `[JSON Parse Error]:\n${rawText}`, true);
-      }
-    }
-
-    // Allow Enter key to submit (Shift+Enter for newline)
-    document.getElementById("userInput").addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-      }
-    });
-  </script>
+document.getElementById("userInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+</script>
 </body>
 </html>
